@@ -73,7 +73,7 @@ jobs:
             .
 
       - name: vulnerability scan
-        uses: aquasecurity/trivy-action@v2
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }}
           format: table
