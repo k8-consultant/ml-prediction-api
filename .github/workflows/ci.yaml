@@ -110,10 +110,18 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           path: gitops
 
-      - name: update image tag in rollout.yaml
+      - name: update image tag in rollout.yaml using python
+        working-directory: gitops
+        
         run: |
-          sed -i "s|image: ghcr.io/k8-consultant/ml-prediction-api:.*|image: ghcr.io/k8-consultant/ml-prediction-api:${{ github.sha }}|"\
-          gitops/environments/dev/rollout.yaml
+          python -c "
+          import yaml
+          with open('environments/dev/rollout.yaml', 'r') as f:
+              data = yaml.safe_load(f)
+          data['spec']['template']['spec']['containers'][0]['image'] = f'ghcr.io/k8-consultant/ml-prediction-api:${{ github.sha }}'
+          with open('environments/dev/rollout.yaml', 'w') as f:
+              yaml.dump(data, f)
+          "
 
       - name: Commit and push changes
         run: |
