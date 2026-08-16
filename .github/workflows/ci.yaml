@@ -109,6 +109,17 @@ jobs:
           repository: k8-consultant/ml-prediction-gitops
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
+      - name: Verify GITOPS_TOKEN inside workflow
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: | 
+          echo "Authenticated GitHub user:"
+          gh api user --jq '.login'
+
+          echo "Permissions seen by this token:"
+          gh api repos/k8-consultant/ml-prediction-gitops \
+              --jq '.permissions'
+
 
       - name: verify gitops repo is checked out
         run: |
