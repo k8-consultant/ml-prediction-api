@@ -110,6 +110,19 @@ jobs:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
 
+      - name: verify gitops repo is checked out
+        run: |
+          cd gitops
+          git status
+          echo "Current directory: $(pwd)"
+          git remote -v
+
+          echo "current branch"
+          git branch --show-current
+
+          echo "credentials configuration"
+          git config --show-origin --get-regexp 'http.*extraheader' || true
+
       - name: update image tag in rollout.yaml using python
         working-directory: gitops
         
