@@ -109,7 +109,8 @@ jobs:
           repository: k8-consultant/ml-prediction-gitops
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
-      - name: Verify GITOPS_TOKEN inside workflow
+
+      - name: Verify  inside workflow
         env:
           GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: | 
