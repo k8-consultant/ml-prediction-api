@@ -1,3 +1,4 @@
+
 name: ML Prediction API CI
 
 on:
@@ -152,19 +153,19 @@ jobs:
 
           content = path.read_text()
 
-          old_pattern = (
+          pattern = (
               r'image:\s*ghcr\.io/k8-consultant/'
               r'ml-prediction-api:\S+'
           )
 
-          new_image = (
+          replacement = (
               f'image: ghcr.io/k8-consultant/'
               f'ml-prediction-api:{sha}'
           )
 
           updated_content, count = re.subn(
-              old_pattern,
-              new_image,
+              pattern,
+              replacement,
               content,
               count=1
           )
@@ -177,7 +178,7 @@ jobs:
 
           path.write_text(updated_content)
 
-          print(f"Updated image to:")
+          print("Updated image to:")
           print(
               f"ghcr.io/k8-consultant/"
               f"ml-prediction-api:{sha}"
@@ -207,6 +208,6 @@ jobs:
             git commit -m "Update image tag to ${{ github.sha }}"
 
             git push \
-              "https://x-access-token:${GITOPS_TOKEN}@github.com/k8-consultant/ml-prediction-gitops.git" \
+              "https://k8-consultant:${GITOPS_TOKEN}@github.com/k8-consultant/ml-prediction-gitops.git" \
               HEAD:main
           fi
