@@ -19,7 +19,6 @@ permissions:
 jobs:
 
   test:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -46,7 +45,6 @@ jobs:
 
 
   build-and-push:
-
     needs: test
 
     if: github.event_name == 'push'
@@ -73,7 +71,8 @@ jobs:
             -t ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }} \
             .
 
-      - name: vulnerability scan
+
+      - name: Vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }}
@@ -82,19 +81,21 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: 0
 
+
       - name: Upload Trivy report
         uses: github/codeql-action/upload-sarif@v3
         with:
           name: sarif-report
           sarif_file: trivy-report.sarif
 
+
       - name: Push Docker image
         run: |
           docker push \
             ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }}
-  
-  upadate-gitops:
 
+
+  update-gitops:
     needs: build-and-push
 
     if: github.event_name == 'push'
@@ -103,63 +104,109 @@ jobs:
 
     steps:
 
-      - name: Checkout repository
+      - name: Checkout GitOps repository
         uses: actions/checkout@v4
         with:
           repository: k8-consultant/ml-prediction-gitops
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
+          persist-credentials: false
 
-    
-      - name: verify gitops repo is checked out
+
+      - name: Verify GitOps token
         env:
-           GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
-          
           echo "Authenticated GitHub user:"
-          gh api user --jq '.login
-          
-          echo "Permissions seen by this token:"
-          gh api repos/k8-consultant/ml-prediction-gitops \
-          --jq '.permissions'
+          gh api user --jq '.login'
 
+          echo "Permissions seen by this token:"
+          gh api repos/k8-consultant/ml-prediction-gitops --jq '.permissions'
+
+          echo "GitOps repository status:"
           cd gitops
           git status
-          echo "Current directory: $(pwd)"
+
+          echo "Current directory:"
+          pwd
+
+          echo "Remote:"
           git remote -v
 
-          echo "current branch"
+          echo "Current branch:"
           git branch --show-current
 
-          echo "credentials configuration"
-          git config --show-origin --get-regexp 'http.*extraheader' || true
 
-      - name: update image tag in rollout.yaml using python
+      - name: Update image tag in rollout.yaml
         working-directory: gitops
-        
+        env:
+          IMAGE_SHA: ${{ github.sha }}
         run: |
-          python -c "
-          import yaml
-          with open('environments/dev/rollout.yaml', 'r') as f:
-              data = yaml.safe_load(f)
-          data['spec']['template']['spec']['containers'][0]['image'] = f'ghcr.io/k8-consultant/ml-prediction-api:${{ github.sha }}'
-          with open('environments/dev/rollout.yaml', 'w') as f:
-              yaml.dump(data, f)
-          "
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("environments/dev/rollout.yaml")
+          sha = os.environ["IMAGE_SHA"]
+
+          content = path.read_text()
+
+          old_pattern = (
+              r'image:\s*ghcr\.io/k8-consultant/'
+              r'ml-prediction-api:\S+'
+          )
+
+          new_image = (
+              f'image: ghcr.io/k8-consultant/'
+              f'ml-prediction-api:{sha}'
+          )
+
+          updated_content, count = re.subn(
+              old_pattern,
+              new_image,
+              content,
+              count=1
+          )
+
+          if count == 0:
+              raise SystemExit(
+                  "ERROR: Could not find ml-prediction-api image "
+                  "inside environments/dev/rollout.yaml"
+              )
+
+          path.write_text(updated_content)
+
+          print(f"Updated image to:")
+          print(
+              f"ghcr.io/k8-consultant/"
+              f"ml-prediction-api:{sha}"
+          )
+          PY
+
+
+      - name: Show GitOps change
+        working-directory: gitops
+        run: |
+          git diff -- environments/dev/rollout.yaml
+
 
       - name: Commit and push changes
+        working-directory: gitops
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
-          cd gitops
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@users.noreply.github.com"
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+
           git add environments/dev/rollout.yaml
 
           if git diff --cached --quiet; then
-            echo "No changes to commit"
-            echo "dummy commit to trigger ArgoCD sync"
-
+            echo "No GitOps changes to commit"
           else
             git commit -m "Update image tag to ${{ github.sha }}"
-            git push origin main 
+
+            git push \
+              "https://x-access-token:${GITOPS_TOKEN}@github.com/k8-consultant/ml-prediction-gitops.git" \
+              HEAD:main
           fi
-      
