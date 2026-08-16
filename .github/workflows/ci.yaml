@@ -110,18 +110,7 @@ jobs:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
 
-      - name: Verify  inside workflow
-        env:
-          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
-        run: | 
-          echo "Authenticated GitHub user:"
-          gh api user --jq '.login'
-
-          echo "Permissions seen by this token:"
-          gh api repos/k8-consultant/ml-prediction-gitops \
-              --jq '.permissions'
-
-
+    
       - name: verify gitops repo is checked out
         run: |
           cd gitops
@@ -134,6 +123,16 @@ jobs:
 
           echo "credentials configuration"
           git config --show-origin --get-regexp 'http.*extraheader' || true
+        
+      - name:  verify workflow has access to the gitops repo
+        run: |
+          echo "Authenticated GitHub user:"
+          gh api user --jq '.login'
+          
+          echo "Permissions seen by this token:"
+          gh api repos/k8-consultant/ml-prediction-gitops \
+              --jq '.permissions'
+          
 
       - name: update image tag in rollout.yaml using python
         working-directory: gitops
