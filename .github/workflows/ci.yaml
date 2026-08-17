@@ -1,4 +1,101 @@
 
+name: ML Prediction API CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout application repository
+        uses: actions/checkout@v4
+
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+
+      - name: Run tests
+        run: |
+          python -m pytest -v
+
+
+  build-and-push:
+    needs: test
+
+    if: github.event_name == 'push'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout application repository
+        uses: actions/checkout@v4
+
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }} \
+            .
+
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }}
+          format: sarif
+          output: trivy-report.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
+
+      - name: Upload Trivy report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          name: trivy-sarif-report
+          sarif_file: trivy-report.sarif
+
+
+      - name: Push Docker image
+        run: |
+          docker push \
+            ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }}
+
+
   update-gitops:
     needs: build-and-push
 
@@ -8,36 +105,58 @@
 
     steps:
 
-      - name: Update GitOps rollout image
+      - name: Verify GitOps token
         env:
           GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
-          IMAGE_SHA: ${{ github.sha }}
         run: |
-          echo "Authenticated user:"
+          echo "Authenticated GitHub user:"
           gh api user --jq '.login'
 
-          echo "Getting current rollout.yaml..."
+          echo "GitOps repository permissions:"
+          gh api repos/k8-consultant/ml-prediction-gitops \
+            --jq '.permissions'
 
-          FILE_DATA=$(gh api \
+
+      - name: Get current rollout.yaml
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: |
+          echo "Downloading current rollout.yaml from GitOps repository..."
+
+          gh api \
             repos/k8-consultant/ml-prediction-gitops/contents/environments/dev/rollout.yaml \
-            --jq '{content: .content, sha: .sha}')
-
-          CURRENT_SHA=$(echo "$FILE_DATA" | jq -r '.sha')
-
-          echo "$FILE_DATA" \
-            | jq -r '.content' \
+            --jq '.content' \
             | base64 --decode \
             > rollout.yaml
 
-          echo "Updating image tag..."
+          echo "Current rollout.yaml retrieved successfully"
 
+
+      - name: Get current GitHub file SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: |
+          FILE_SHA=$(gh api \
+            repos/k8-consultant/ml-prediction-gitops/contents/environments/dev/rollout.yaml \
+            --jq '.sha')
+
+          echo "FILE_SHA=${FILE_SHA}" >> "$GITHUB_ENV"
+
+          echo "Current GitHub file SHA:"
+          echo "${FILE_SHA}"
+
+
+      - name: Update image tag
+        env:
+          IMAGE_SHA: ${{ github.sha }}
+        run: |
           python - <<'PY'
           import os
           import re
           from pathlib import Path
 
           path = Path("rollout.yaml")
-          sha = os.environ["IMAGE_SHA"]
+          image_sha = os.environ["IMAGE_SHA"]
 
           content = path.read_text()
 
@@ -48,10 +167,10 @@
 
           replacement = (
               f'image: ghcr.io/k8-consultant/'
-              f'ml-prediction-api:{sha}'
+              f'ml-prediction-api:{image_sha}'
           )
 
-          updated, count = re.subn(
+          updated_content, count = re.subn(
               pattern,
               replacement,
               content,
@@ -60,30 +179,65 @@
 
           if count == 0:
               raise SystemExit(
-                  "Could not find ml-prediction-api image"
+                  "ERROR: Could not find ml-prediction-api image "
+                  "inside rollout.yaml"
               )
 
-          path.write_text(updated)
+          path.write_text(updated_content)
 
+          print("Updated image to:")
           print(
-              f"Updated image to "
               f"ghcr.io/k8-consultant/"
-              f"ml-prediction-api:{sha}"
+              f"ml-prediction-api:{image_sha}"
           )
           PY
 
-          echo "Encoding updated file..."
 
+      - name: Show updated image
+        run: |
+          echo "Updated rollout image:"
+          grep "image:" rollout.yaml
+
+
+      - name: Encode updated rollout.yaml
+        run: |
           UPDATED_CONTENT=$(base64 -w 0 rollout.yaml)
 
-          echo "Updating GitOps repository..."
+          echo "UPDATED_CONTENT=${UPDATED_CONTENT}" >> "$GITHUB_ENV"
+
+
+      - name: Update GitOps repository
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          IMAGE_SHA: ${{ github.sha }}
+        run: |
+          echo "Updating rollout.yaml in GitOps repository..."
 
           gh api \
             --method PUT \
             repos/k8-consultant/ml-prediction-gitops/contents/environments/dev/rollout.yaml \
             -f message="Deploy ml-prediction-api ${IMAGE_SHA}" \
             -f content="${UPDATED_CONTENT}" \
-            -f sha="${CURRENT_SHA}" \
+            -f sha="${FILE_SHA}" \
             -f branch="main"
 
           echo "GitOps repository updated successfully"
+
+
+      - name: Verify GitOps update
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: |
+          echo "Latest GitOps commit:"
+
+          gh api \
+            repos/k8-consultant/ml-prediction-gitops/commits/main \
+            --jq '.commit.message'
+
+          echo "Updated image in GitOps repository:"
+
+          gh api \
+            repos/k8-consultant/ml-prediction-gitops/contents/environments/dev/rollout.yaml \
+            --jq '.content' \
+            | base64 --decode \
+            | grep "image:"
