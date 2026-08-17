@@ -63,6 +63,12 @@ def health():
         "model_version": MODEL_VERSION,
     }
 
+@app.get("/version")
+def version():
+    return {
+        "application_version": APP_VERSION,
+        "model_version": MODEL_VERSION,
+    }
 
 # --------------------------------------------------
 # Prediction Endpoint
