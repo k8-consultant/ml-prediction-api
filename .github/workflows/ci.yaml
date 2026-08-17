@@ -209,7 +209,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
-          echo "Latest GitOps commit:"  
+          echo "Latest GitOps commit:"   
 
           gh api \
             repos/k8-consultant/ml-prediction-gitops/commits/main \
