@@ -119,7 +119,7 @@ def make_prediction(data: PredictionRequest):
 
 
 # --------------------------------------------------
-# Prometheus Metrics Endpoint
+# Prometheus Metrics Endpoint check
 # --------------------------------------------------
 
 @app.get("/metrics")
