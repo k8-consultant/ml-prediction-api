@@ -1,4 +1,3 @@
-
 import os
 import time
 
@@ -15,18 +14,9 @@ app = FastAPI(
     version="2.0.0",
 )
 
-
-# --------------------------------------------------
-# Application / Model Version
-# --------------------------------------------------
-
 APP_VERSION = os.getenv("APP_VERSION", "v2")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "model-v1")
-
-
-# --------------------------------------------------
-# Prometheus Metrics
-# --------------------------------------------------
+FAIL_CANARY = os.getenv("FAIL_CANARY", "false").lower() == "true"
 
 REQUEST_COUNT = Counter(
     "ml_api_requests_total",
@@ -42,19 +32,11 @@ REQUEST_LATENCY = Histogram(
 )
 
 
-# --------------------------------------------------
-# Request Model
-# --------------------------------------------------
-
 class PredictionRequest(BaseModel):
     age: int
     income: float
     credit_score: int
 
-
-# --------------------------------------------------
-# Health Endpoint
-# --------------------------------------------------
 
 @app.get("/health")
 def health():
@@ -65,10 +47,6 @@ def health():
     }
 
 
-# --------------------------------------------------
-# Version Endpoint
-# --------------------------------------------------
-
 @app.get("/version")
 def version():
     return {
@@ -77,23 +55,12 @@ def version():
     }
 
 
-# --------------------------------------------------
-# Prediction Endpoint
-# --------------------------------------------------
-
 @app.post("/predict")
 def make_prediction(data: PredictionRequest):
-
     start_time = time.time()
 
     try:
-
-        # --------------------------------------------------
-        # Intentional V2 failure for Canary testing
-        # --------------------------------------------------
-
-        if APP_VERSION == "v2":
-
+        if FAIL_CANARY:
             REQUEST_COUNT.labels(
                 endpoint="/predict",
                 status="error",
@@ -101,12 +68,8 @@ def make_prediction(data: PredictionRequest):
 
             raise HTTPException(
                 status_code=500,
-                detail="Intentional V2 canary failure",
+                detail="Intentional canary runtime failure",
             )
-
-        # --------------------------------------------------
-        # Normal prediction behaviour
-        # --------------------------------------------------
 
         result = predict(
             age=data.age,
@@ -120,18 +83,16 @@ def make_prediction(data: PredictionRequest):
         ).inc()
 
         return {
-            **result,
+            "prediction": result["prediction"],
+            "risk_score": result["risk_score"],
             "application_version": APP_VERSION,
             "model_version": MODEL_VERSION,
         }
 
     except HTTPException:
-        # Important:
-        # The error metric was already incremented above.
         raise
 
-    except Exception as exc:
-
+    except Exception:
         REQUEST_COUNT.labels(
             endpoint="/predict",
             status="error",
@@ -140,24 +101,16 @@ def make_prediction(data: PredictionRequest):
         raise HTTPException(
             status_code=500,
             detail="Prediction failed",
-        ) from exc
-
-    finally:
-
-        REQUEST_LATENCY.labels(
-            endpoint="/predict",
-        ).observe(
-            time.time() - start_time
         )
 
+    finally:
+        REQUEST_LATENCY.labels(
+            endpoint="/predict",
+        ).observe(time.time() - start_time)
 
-# --------------------------------------------------
-# Prometheus Metrics Endpoint
-# --------------------------------------------------
 
 @app.get("/metrics")
 def metrics():
-
     return Response(
         content=generate_latest(),
         media_type="text/plain",
