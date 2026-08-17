@@ -200,7 +200,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
 
-          git add environments/dev/rollout.yaml
+          git add environments/dev/rollout.yaml 
 
           if git diff --cached --quiet; then
             echo "No GitOps changes to commit"
