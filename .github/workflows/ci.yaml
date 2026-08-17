@@ -26,6 +26,7 @@ jobs:
 
       - name: Checkout application repository
         uses: actions/checkout@v4
+        
 
 
       - name: Set up Python
