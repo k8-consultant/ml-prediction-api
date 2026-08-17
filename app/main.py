@@ -1,3 +1,4 @@
+
 import os
 import time
 
@@ -11,7 +12,7 @@ from app.model import predict
 
 app = FastAPI(
     title="ML Prediction API",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 
@@ -63,12 +64,18 @@ def health():
         "model_version": MODEL_VERSION,
     }
 
+
+# --------------------------------------------------
+# Version Endpoint
+# --------------------------------------------------
+
 @app.get("/version")
 def version():
     return {
         "application_version": APP_VERSION,
         "model_version": MODEL_VERSION,
     }
+
 
 # --------------------------------------------------
 # Prediction Endpoint
@@ -80,6 +87,27 @@ def make_prediction(data: PredictionRequest):
     start_time = time.time()
 
     try:
+
+        # --------------------------------------------------
+        # Intentional V2 failure for Canary testing
+        # --------------------------------------------------
+
+        if APP_VERSION == "v2":
+
+            REQUEST_COUNT.labels(
+                endpoint="/predict",
+                status="error",
+            ).inc()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Intentional V2 canary failure",
+            )
+
+        # --------------------------------------------------
+        # Normal prediction behaviour
+        # --------------------------------------------------
+
         result = predict(
             age=data.age,
             income=data.income,
@@ -96,6 +124,11 @@ def make_prediction(data: PredictionRequest):
             "application_version": APP_VERSION,
             "model_version": MODEL_VERSION,
         }
+
+    except HTTPException:
+        # Important:
+        # The error metric was already incremented above.
+        raise
 
     except Exception as exc:
 
@@ -119,7 +152,7 @@ def make_prediction(data: PredictionRequest):
 
 
 # --------------------------------------------------
-# Prometheus Metrics Endpoint check
+# Prometheus Metrics Endpoint
 # --------------------------------------------------
 
 @app.get("/metrics")
