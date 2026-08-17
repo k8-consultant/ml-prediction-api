@@ -1,4 +1,3 @@
-
 name: ML Prediction API CI
 
 on:
@@ -26,20 +25,16 @@ jobs:
 
       - name: Checkout application repository
         uses: actions/checkout@v4
-        
-
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
 
       - name: Run tests
         run: |
@@ -58,7 +53,6 @@ jobs:
       - name: Checkout application repository
         uses: actions/checkout@v4
 
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -66,13 +60,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-
       - name: Build Docker image
         run: |
           docker build \
             -t ghcr.io/${{ github.repository_owner }}/ml-prediction-api:${{ github.sha }} \
             .
-
 
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@master
@@ -83,13 +75,11 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: 0
 
-
       - name: Upload Trivy report
         uses: github/codeql-action/upload-sarif@v3
         with:
           name: trivy-sarif-report
           sarif_file: trivy-report.sarif
-
 
       - name: Push Docker image
         run: |
@@ -118,12 +108,40 @@ jobs:
             --jq '.permissions'
 
 
+      - name: Test PAT write access
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: |
+          CONTENT=$(printf "PAT write test\n" | base64 -w 0)
+
+          EXISTING_SHA=$(gh api \
+            repos/k8-consultant/ml-prediction-gitops/contents/pat-write-test.txt \
+            --jq '.sha' 2>/dev/null || true)
+
+          if [ -n "$EXISTING_SHA" ]; then
+            gh api \
+              --method PUT \
+              repos/k8-consultant/ml-prediction-gitops/contents/pat-write-test.txt \
+              -f message="Update PAT write test" \
+              -f content="$CONTENT" \
+              -f sha="$EXISTING_SHA" \
+              -f branch="main"
+          else
+            gh api \
+              --method PUT \
+              repos/k8-consultant/ml-prediction-gitops/contents/pat-write-test.txt \
+              -f message="Test PAT write access" \
+              -f content="$CONTENT" \
+              -f branch="main"
+          fi
+
+          echo "PAT write test succeeded"
+
+
       - name: Get current rollout.yaml
         env:
           GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
-          echo "Downloading current rollout.yaml from GitOps repository..."
-
           gh api \
             repos/k8-consultant/ml-prediction-gitops/contents/environments/dev/rollout.yaml \
             --jq '.content' \
@@ -133,7 +151,7 @@ jobs:
           echo "Current rollout.yaml retrieved successfully"
 
 
-      - name: Get current GitHub file SHA
+      - name: Get current rollout file SHA
         env:
           GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
@@ -141,10 +159,10 @@ jobs:
             repos/k8-consultant/ml-prediction-gitops/contents/environments/dev/rollout.yaml \
             --jq '.sha')
 
-          echo "FILE_SHA=${FILE_SHA}" >> "$GITHUB_ENV"
+          echo "FILE_SHA=$FILE_SHA" >> "$GITHUB_ENV"
 
-          echo "Current GitHub file SHA:"
-          echo "${FILE_SHA}"
+          echo "Current rollout.yaml SHA:"
+          echo "$FILE_SHA"
 
 
       - name: Update image tag
@@ -204,7 +222,7 @@ jobs:
         run: |
           UPDATED_CONTENT=$(base64 -w 0 rollout.yaml)
 
-          echo "UPDATED_CONTENT=${UPDATED_CONTENT}" >> "$GITHUB_ENV"
+          echo "UPDATED_CONTENT=$UPDATED_CONTENT" >> "$GITHUB_ENV"
 
 
       - name: Update GitOps repository
