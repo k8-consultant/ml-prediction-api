@@ -19,7 +19,7 @@ app = FastAPI(
 # Application / Model Version
 # --------------------------------------------------
 
-APP_VERSION = os.getenv("APP_VERSION", "v1")
+APP_VERSION = os.getenv("APP_VERSION", "v2")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "model-v1")
 
 
