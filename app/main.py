@@ -16,7 +16,6 @@ app = FastAPI(
 
 APP_VERSION = os.getenv("APP_VERSION", "v2")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "model-v1")
-FAIL_CANARY = os.getenv("FAIL_CANARY", "false").lower() == "true"
 
 REQUEST_COUNT = Counter(
     "ml_api_requests_total",
