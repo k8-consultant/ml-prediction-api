@@ -14,9 +14,10 @@ app = FastAPI(
     version="2.0.0",
 )
 
+
 APP_VERSION = os.getenv("APP_VERSION", "v2")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "model-v1")
-FAIL_CANARY = os.getenv("FAIL_CANARY", "false").lower() == "false"
+
 
 REQUEST_COUNT = Counter(
     "ml_api_requests_total",
@@ -57,20 +58,10 @@ def version():
 
 @app.post("/predict")
 def make_prediction(data: PredictionRequest):
+
     start_time = time.time()
 
     try:
-        if FAIL_CANARY:
-            REQUEST_COUNT.labels(
-                endpoint="/predict",
-                status="error",
-            ).inc()
-
-            raise HTTPException(
-                status_code=500,
-                detail="Intentional canary runtime failure",
-            )
-
         result = predict(
             age=data.age,
             income=data.income,
@@ -83,16 +74,13 @@ def make_prediction(data: PredictionRequest):
         ).inc()
 
         return {
-            "prediction": result["prediction"],
-            "risk_score": result["risk_score"],
+            **result,
             "application_version": APP_VERSION,
             "model_version": MODEL_VERSION,
         }
 
-    except HTTPException:
-        raise
+    except Exception as exc:
 
-    except Exception:
         REQUEST_COUNT.labels(
             endpoint="/predict",
             status="error",
@@ -101,12 +89,14 @@ def make_prediction(data: PredictionRequest):
         raise HTTPException(
             status_code=500,
             detail="Prediction failed",
-        )
+        ) from exc
 
     finally:
         REQUEST_LATENCY.labels(
             endpoint="/predict",
-        ).observe(time.time() - start_time)
+        ).observe(
+            time.time() - start_time
+        )
 
 
 @app.get("/metrics")
